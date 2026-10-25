@@ -43,7 +43,24 @@ Notes:
 
 - `local.properties` is gitignored. Do not commit it.
 - The Gradle wrapper points at the Tencent Gradle mirror for faster downloads in mainland China. If you prefer the official source, change `distributionUrl` in `gradle/wrapper/gradle-wrapper.properties` to `https://services.gradle.org/distributions/gradle-9.7.1-bin.zip`. No SHA-256 checksum is currently pinned.
-- This repository builds a debug APK. Add your own signing configuration for a release build.
+- This repository builds a debug APK by default. See **Release signing** below for a signed release build.
+
+### Release signing
+
+Release builds are unsigned unless a keystore is supplied through environment
+variables:
+
+```bash
+export TVMCP_KEYSTORE=/absolute/path/to/tvmcp-release.jks
+export TVMCP_STORE_PASSWORD='...'
+export TVMCP_KEY_ALIAS=tvmcp
+export TVMCP_KEY_PASSWORD='...'
+./gradlew :app:assembleRelease
+```
+
+Keep the keystore and password file backed up outside the repository. Losing
+them prevents in-place updates for users who installed a release-signed APK.
+Never commit the keystore or its passwords.
 
 ## First run
 

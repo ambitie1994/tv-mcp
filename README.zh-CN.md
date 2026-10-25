@@ -126,7 +126,21 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Android 15+ 限制了从 `BOOT_COMPLETED` 启动 `mediaPlayback` 前台服务，开机自启可能不生效。
 - 解码能力取决于设备；低端硬件可能无法播放 4K/高码率文件。
 - 每个应用只有一个播放器实例；支持队列，但不支持多房间同步。
-- 本仓库只构建 debug APK；正式签名由使用者自己配置。
+- 本仓库默认构建 debug APK。正式签名包见下面的 **Release signing**。
+
+### Release signing（正式签名）
+
+如果没有提供 keystore，release 包是未签名的。通过环境变量提供：
+
+```bash
+export TVMCP_KEYSTORE=/absolute/path/to/tvmcp-release.jks
+export TVMCP_STORE_PASSWORD='...'
+export TVMCP_KEY_ALIAS=tvmcp
+export TVMCP_KEY_PASSWORD='...'
+./gradlew :app:assembleRelease
+```
+
+keystore 和密码文件必须备份在仓库之外。丢失后将无法给已安装正式包的用户做覆盖升级。不要把 keystore 或密码提交到仓库。
 - IPTV 内容由用户提供，本项目不托管、不提供任何直播源。
 
 ## 目录结构

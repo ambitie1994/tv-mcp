@@ -2,6 +2,14 @@ plugins {
     id("com.android.application")
 }
 
+val releaseKeystore = System.getenv("TVMCP_KEYSTORE")
+val releaseStorePassword = System.getenv("TVMCP_STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("TVMCP_KEY_ALIAS") ?: "tvmcp"
+val releaseKeyPassword = System.getenv("TVMCP_KEY_PASSWORD")
+val hasReleaseSigning = !releaseKeystore.isNullOrBlank() &&
+    !releaseStorePassword.isNullOrBlank() &&
+    !releaseKeyPassword.isNullOrBlank()
+
 android {
     namespace = "com.ambitie.tvmcp"
     compileSdk = 36
@@ -14,10 +22,22 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystore!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
