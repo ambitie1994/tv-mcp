@@ -31,6 +31,7 @@ import com.ambitie.tvmcp.mcp.objectSchema
 import com.ambitie.tvmcp.mcp.objectValue
 import com.ambitie.tvmcp.mcp.stringProperty
 import com.ambitie.tvmcp.mcp.stringValue
+import com.ambitie.tvmcp.playback.MediaFiles
 import com.ambitie.tvmcp.playback.MediaSpec
 import com.ambitie.tvmcp.playback.PlaybackHistory
 import com.ambitie.tvmcp.playback.PlaybackStatus
@@ -707,12 +708,13 @@ class TvTools(
 
     private fun playTool() = McpTool(
         name = "play",
-        description = "在电视上播放媒体。可以用 url（http/https）或 source_id + path（SMB）。path 必须是 browse 返回的相对共享根目录完整路径，不是文件名。默认会从上次进度续播。支持队列、断点、片头片尾自动跳过。",
+        description = "在电视上播放媒体。可以用 url（http/https）或 source_id + path（SMB）。path 必须是 browse 返回的相对共享根目录完整路径，不是文件名；path 也可以是文件夹，会把文件夹内媒体文件按文件名排序连播。默认 SMB 播放会自动把同目录媒体排成队列（上一集/下一集、播完自动连播），queue_folder=false 可关闭。默认会从上次进度续播。",
         inputSchema = objectSchema(
             mapOf(
                 "url" to stringProperty("http/https 媒体地址，与 path 二选一"),
                 "source_id" to stringProperty("SMB 片源 id；只配置了一个片源时可省略"),
-                "path" to stringProperty("SMB 共享内的完整相对路径（browse 返回的 path 字段，例如 目录/文件名）；不能只传文件名"),
+                "path" to stringProperty("SMB 共享内的完整相对路径（browse 返回的 path 字段，例如 目录/文件名，也可以是目录路径）；不能只传文件名"),
+                "queue_folder" to booleanProperty("SMB 播放时是否把同目录（或该目录本身）的可播放媒体文件按文件名排序加入队列，默认 true", default = true),
                 "title" to stringProperty("显示标题，默认取文件名"),
                 "start_ms" to integerProperty("起始播放位置（毫秒），传入后不再自动续播", minimum = 0),
                 "resume" to booleanProperty("未传 start_ms 时是否从上次进度续播，默认 true", default = true),
@@ -728,16 +730,21 @@ class TvTools(
         )
     ) { args ->
         val media = MediaSpec.single(sources, history, args, allowResume = true)
-        verifySmbFile(media.item)
+        val plan = MediaFiles.buildPlayPlan(sources, pool, args, media, args.booleanValue("queue_folder") ?: true)
         val status = onMain {
             val pm = playerProvider()
-            pm.play(media)
+            if (plan.items.size > 1) {
+                pm.playQueue(plan.items, plan.startIndex, plan.startMs)
+            } else {
+                pm.play(plan.items[plan.startIndex])
+            }
             pm.snapshot()
         }
         onMain { onPlaybackStarted() }
         val sourceLine = media.sourceLabel?.let { "\n来源：$it" }.orEmpty()
+        val noteLine = plan.note?.let { "\n$it" }.orEmpty()
         ToolResult(
-            text = "已开始播放：${media.title}$sourceLine\n${statusText(status)}",
+            text = "已开始播放：${media.title}$sourceLine$noteLine\n${statusText(status)}",
             structured = statusJson(status).let { base ->
                 JsonObject(
                     base.toMutableMap().apply {
@@ -1178,15 +1185,19 @@ class TvTools(
             put("resume", true)
         }
         val media = MediaSpec.single(sources, history, playArgs, allowResume = true)
-        verifySmbFile(media.item)
+        val plan = MediaFiles.buildPlayPlan(sources, pool, playArgs, media, queueFolder = true)
         val status = onMain {
             val pm = playerProvider()
-            pm.play(media)
+            if (plan.items.size > 1) {
+                pm.playQueue(plan.items, plan.startIndex, plan.startMs)
+            } else {
+                pm.play(plan.items[plan.startIndex])
+            }
             pm.snapshot()
         }
         onMain { onPlaybackStarted() }
         ToolResult(
-            text = "已继续播放：${media.title}\n${statusText(status)}",
+            text = "已继续播放：${media.title}${plan.note?.let { "\n$it" }.orEmpty()}\n${statusText(status)}",
             structured = statusJson(status).let { base ->
                 JsonObject(
                     base.toMutableMap().apply {
@@ -1250,28 +1261,7 @@ class TvTools(
     }
 
     private suspend fun verifySmbFile(item: androidx.media3.common.MediaItem?) {
-        val info = MediaSpec.currentMedia(item) ?: return
-        val sourceId = info.sourceId ?: return
-        val path = info.path ?: return
-        val source = sources.get(sourceId) ?: throw ToolException("未找到片源：$sourceId")
-        val parent = path.substringBeforeLast('/', "")
-        val name = path.substringAfterLast('/')
-        val entries = try {
-            withContext(Dispatchers.IO) { pool.list(source, parent) }
-        } catch (e: Exception) {
-            throw ToolException("无法读取 SMB 目录 ${source.share}/$parent：${e.message ?: "连接失败"}")
-        }
-        if (entries.none { !it.isDirectory && it.name == name }) {
-            val dirs = entries.filter { it.isDirectory }.take(6).joinToString("、") { it.name }
-            val files = entries.filter { !it.isDirectory }.take(6).joinToString("、") { it.name }
-            val hint = buildString {
-                append("SMB 文件不存在：${source.share}/$path")
-                if (dirs.isNotEmpty()) append("；子目录：$dirs")
-                if (files.isNotEmpty()) append("；文件：$files")
-                append("。path 必须是相对共享根目录的完整路径（例如 目录/文件名），可用 browse 获取。")
-            }
-            throw ToolException(hint)
-        }
+        MediaFiles.verifySmbFile(sources, pool, item)
     }
 
     private fun resolveSource(id: String?): SmbSource {

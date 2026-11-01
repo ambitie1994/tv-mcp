@@ -55,6 +55,7 @@ import com.ambitie.tvmcp.iptv.M3uLoader
 import com.ambitie.tvmcp.iptv.M3uParser
 import com.ambitie.tvmcp.mcp.ToolException
 import com.ambitie.tvmcp.playback.HistoryEntry
+import com.ambitie.tvmcp.playback.MediaFiles
 import com.ambitie.tvmcp.playback.MediaSpec
 import com.ambitie.tvmcp.playback.PlaybackStatus
 import com.ambitie.tvmcp.playback.PlayerManager
@@ -119,6 +120,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var menuContent: LinearLayout
     private lateinit var hudControls: LinearLayout
     private lateinit var hudPlayPause: Button
+    private lateinit var playlistPanel: LinearLayout
+    private lateinit var playlistScroll: ScrollView
+    private lateinit var playlistList: LinearLayout
+    private var lastPlaylistSig: String? = null
     private lateinit var touchMenuButton: Button
     private var touchHintShown = false
     private val hasTouchscreen by lazy {
@@ -382,6 +387,73 @@ class MainActivity : AppCompatActivity() {
         showHud(HudMode.SEEK, if (wasPlaying) "已暂停" else "播放中")
     }
 
+    private fun playlistVisible(): Boolean =
+        ::playlistPanel.isInitialized && playlistPanel.visibility == View.VISIBLE
+
+    private fun togglePlaylist() {
+        if (playlistVisible()) {
+            hidePlaylist()
+        } else {
+            val manager = core.playerOrNull() ?: return
+            renderPlaylist(manager)
+            playlistPanel.visibility = View.VISIBLE
+        }
+        resetHudTimer()
+    }
+
+    private fun hidePlaylist() {
+        if (::playlistPanel.isInitialized) {
+            playlistPanel.visibility = View.GONE
+            lastPlaylistSig = null
+        }
+    }
+
+    private fun renderPlaylist(manager: PlayerManager) {
+        val titles = manager.queueTitles()
+        val current = manager.currentQueueIndex()
+        if (titles.isEmpty()) {
+            hidePlaylist()
+            return
+        }
+        playlistList.removeAllViews()
+        titles.forEachIndexed { index, title ->
+            val isCurrent = index == current
+            val row = Button(this).apply {
+                text = if (isCurrent) "▶ $title" else "${index + 1}. $title"
+                isAllCaps = false
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                textSize = 12f
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setTextColor(if (isCurrent) 0xFFFFC542.toInt() else color(R.color.text))
+                if (isCurrent) setBackgroundResource(R.drawable.touch_control_bg)
+                minHeight = dp(40)
+                minimumHeight = dp(40)
+                setPadding(dp(8), 0, dp(8), 0)
+                isFocusable = false
+                isFocusableInTouchMode = false
+                setOnClickListener {
+                    core.playerOrNull()?.let { pm ->
+                        runCatching { pm.playQueueItem(index) }
+                        renderPlaylist(pm)
+                        showHud(HudMode.SEEK)
+                    }
+                }
+            }
+            playlistList.addView(
+                row,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+        playlistScroll.post {
+            val target = playlistList.getChildAt(current.coerceIn(0, titles.lastIndex)) ?: return@post
+            playlistScroll.smoothScrollTo(0, (target.top - dp(24)).coerceAtLeast(0))
+        }
+    }
+
     private fun setupBackHandling() {
         onBackPressedDispatcher.addCallback(
             this,
@@ -401,6 +473,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                         menuVisible -> closeMenu()
+                        playerOverlay.visibility == View.VISIBLE && playlistVisible() -> hidePlaylist()
                         playerOverlay.visibility == View.VISIBLE &&
                             hudVisible && lastStatus?.state == "ended" ->
                             leavePlayerTo(playerReturnScreen)
@@ -509,7 +582,11 @@ class MainActivity : AppCompatActivity() {
         playerView.subtitleView?.visibility = View.GONE
         if (hasTouchscreen) {
             playerView.setOnClickListener {
-                if (hudVisible) hideHud() else showHud(HudMode.SEEK)
+                when {
+                    playlistVisible() -> hidePlaylist()
+                    hudVisible -> hideHud()
+                    else -> showHud(HudMode.SEEK)
+                }
             }
         }
         playerOverlay.addView(playerView, matchParent())
@@ -626,11 +703,8 @@ class MainActivity : AppCompatActivity() {
         hudControls.addView(hudButton("+10s") {
             core.playerOrNull()?.let { applySeek(it, SEEK_STEP_MS) }
         }, hudControlParams())
-        hudControls.addView(hudButton("音量-") {
-            core.playerOrNull()?.let { changeVolume(it, -1, TOUCH_VOLUME_STEP) }
-        }, hudControlParams())
-        hudControls.addView(hudButton("音量+") {
-            core.playerOrNull()?.let { changeVolume(it, 1, TOUCH_VOLUME_STEP) }
+        hudControls.addView(hudButton("列表") {
+            togglePlaylist()
         }, hudControlParams())
         hudControls.addView(hudButton("菜单") {
             openMenu()
@@ -652,6 +726,59 @@ class MainActivity : AppCompatActivity() {
                 leftMargin = dp(80)
                 rightMargin = dp(80)
                 bottomMargin = dp(36)
+            }
+        )
+        playlistList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        playlistScroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(
+                playlistList,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+        playlistPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setBackgroundResource(R.drawable.playlist_bg)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            isFocusable = false
+            isFocusableInTouchMode = false
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        textView("播放列表", 14f, R.color.text, bold = true),
+                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    )
+                    if (hasTouchscreen) {
+                        addView(
+                            hudButton("关闭") { hidePlaylist() },
+                            LinearLayout.LayoutParams(dp(56), dp(36))
+                        )
+                    }
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(6) }
+            )
+            addView(
+                playlistScroll,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            )
+        }
+        playerOverlay.addView(
+            playlistPanel,
+            FrameLayout.LayoutParams(dp(230), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END).apply {
+                topMargin = dp(8)
+                rightMargin = dp(10)
+                bottomMargin = dp(70)
             }
         )
         root.addView(playerOverlay, matchParent())
@@ -1687,17 +1814,24 @@ class MainActivity : AppCompatActivity() {
         allowResume: Boolean = true,
         returnScreen: Screen = Screen.HOME
     ) {
-        try {
-            val media = MediaSpec.single(core.sources, core.history, args, allowResume = allowResume)
-            playerHidden = false
-            playerReturnScreen = returnScreen
-            val manager = core.player()
-            manager.play(media)
-            renderPlayback(manager.snapshot())
-        } catch (e: ToolException) {
-            toast(e.message ?: "无法播放")
-        } catch (e: Exception) {
-            toast("无法播放：${e.message}")
+        lifecycleScope.launch {
+            try {
+                val media = MediaSpec.single(core.sources, core.history, args, allowResume = allowResume)
+                val plan = MediaFiles.buildPlayPlan(core.sources, core.smbPool, args, media, queueFolder = true)
+                playerHidden = false
+                playerReturnScreen = returnScreen
+                val manager = core.player()
+                if (plan.items.size > 1) {
+                    manager.playQueue(plan.items, plan.startIndex, plan.startMs)
+                } else {
+                    manager.play(plan.items[plan.startIndex])
+                }
+                renderPlayback(manager.snapshot())
+            } catch (e: ToolException) {
+                toast(e.message ?: "无法播放")
+            } catch (e: Exception) {
+                toast("无法播放：${e.message}")
+            }
         }
     }
 
@@ -1721,6 +1855,18 @@ class MainActivity : AppCompatActivity() {
             playerHidden = false
         }
         lastStatus = status
+
+        if (playlistVisible()) {
+            if (status?.hasMedia != true) {
+                hidePlaylist()
+            } else {
+                val sig = "${status.mediaKey}|${status.queueIndex}|${status.queueCount}"
+                if (sig != lastPlaylistSig) {
+                    lastPlaylistSig = sig
+                    core.playerOrNull()?.let { renderPlaylist(it) }
+                }
+            }
+        }
 
         if (status?.error == null) {
             lastErrorShown = null
@@ -1921,6 +2067,7 @@ class MainActivity : AppCompatActivity() {
         }
         playerHidden = true
         hideHudNow()
+        hidePlaylist()
         playerOverlay.visibility = View.GONE
         detachPlayer()
         overlayShown = false
@@ -1935,6 +2082,7 @@ class MainActivity : AppCompatActivity() {
     private fun openMenu() {
         if (!::menuOverlay.isInitialized || menuVisible) return
         hideHudNow()
+        hidePlaylist()
         focusBeforeMenu = currentFocus
         subtitleMenuVisible = false
         menuResumePlayback = false
@@ -2303,6 +2451,7 @@ class MainActivity : AppCompatActivity() {
         }
         playerHidden = true
         hideHudNow()
+        hidePlaylist()
         playerOverlay.visibility = View.GONE
         detachPlayer()
         overlayShown = false
@@ -2498,7 +2647,6 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_CHANNEL_ROWS = 400
         private const val SEEK_STEP_MS = 10_000L
         private const val VOLUME_STEP = 0.01f
-        private const val TOUCH_VOLUME_STEP = 0.05f
         private const val SEEK_REPEAT_MS = 250L
         private const val VOLUME_REPEAT_MS = 90L
 

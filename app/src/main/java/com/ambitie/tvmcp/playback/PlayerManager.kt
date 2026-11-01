@@ -193,6 +193,30 @@ class PlayerManager(
         emit()
     }
 
+    fun queueTitles(): List<String> {
+        ensureAlive()
+        return (0 until player.mediaItemCount).map { index ->
+            val item = player.getMediaItemAt(index)
+            item.mediaMetadata.title?.toString()?.takeIf { it.isNotBlank() }
+                ?: item.mediaId.takeIf { it.isNotBlank() }
+                ?: "第 ${index + 1} 个"
+        }
+    }
+
+    fun currentQueueIndex(): Int =
+        if (player.mediaItemCount > 0) player.currentMediaItemIndex else -1
+
+    fun playQueueItem(index: Int) {
+        ensureAlive()
+        requireMedia()
+        if (index < 0 || index >= player.mediaItemCount) return
+        persist(false)
+        _cueText.value = null
+        player.seekTo(index, 0)
+        player.play()
+        emit()
+    }
+
     fun setVolume(volume: Float) {
         ensureAlive()
         applyVolume(volume.coerceIn(0f, 1f))

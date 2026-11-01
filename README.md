@@ -108,10 +108,13 @@ Example client configuration (syntax depends on your MCP client):
 - **Play an SMB file**: `list_sources` → `browse` → `play {source_id, path}`.
 
   Use the exact `path` returned by `browse` (relative to the share root, for example `Shows/Episode 01.mp4`), not just the file name.
+  By default `play` also queues every playable media file in the same folder, sorted by name with natural numeric order (`2 < 10 < 100`), so `control next/previous` jumps between episodes and playback auto-advances when an episode ends. Set `queue_folder: false` to play a single file.
+
+- **Play a folder**: `play {source_id, path: "Shows/Season 1"}` — a directory path plays the whole folder as a name-sorted queue.
 
 - **Continue watching**: `resume_history {title: "..."}`.
 
-  It reads the stored `source_id`/`path` from history. Do not assemble SMB paths manually.
+  It reads the stored `source_id`/`path` from history. Do not assemble SMB paths manually. Resuming a series also rebuilds the folder queue, so the next episode plays automatically.
 
 - **IPTV**: `save_iptv_source {name, url}` → `test_iptv_source` → `list_channels` → `play_channel {name|index}`.
 - **Subtitles**: `list_subtitles` → `set_subtitle {track_index|path|url}` and `set_subtitle_style`.

@@ -407,8 +407,8 @@ class TvMcpCore(private val context: Context) {
             典型调用链：
             1. list_sources 查看已保存的 SMB 片源；没有片源时用 save_smb_source 添加，test_smb_source 验证，delete_smb_source 删除。
             2. browse 浏览共享目录，拿到视频文件的 path 字段（相对共享根目录的完整路径）。
-            3. play 播放：source_id + path（path 必须原样用 browse 返回的完整相对路径，不能只传文件名），或 http/https URL；可带 start_ms、intro_end_ms、outro_start_ms。
-            4. status 查看播放进度和错误；control 控制暂停/继续/跳转/音量/下一集。
+            3. play 播放：source_id + path（path 必须原样用 browse 返回的完整相对路径，不能只传文件名；path 也可以是目录，整目录按文件名排序连播），或 http/https URL；可带 start_ms、intro_end_ms、outro_start_ms。
+            4. status 查看播放进度和错误；control 控制暂停/继续/跳转/音量/next 下一集/previous 上一集。SMB 播放默认把同目录的可播放媒体文件按文件名排序加入队列：播完自动连播，control next/previous 就是上一集/下一集；queue_folder=false 可关闭。
             5. play_queue 可一次提交多集并自动连播；get_history 可查询上次看到哪，播放记录保存在电视本地，play 默认从上次进度续播。
             6. list_subtitles 查看内嵌字幕轨和同目录外挂字幕；set_subtitle 选择/关闭/加载字幕；set_subtitle_style 调整字号、颜色、背景和位置。
             7. show_list 可把列表放到电视首页，用户用遥控器就能选。

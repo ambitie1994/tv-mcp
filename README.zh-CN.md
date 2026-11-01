@@ -91,10 +91,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **播放 SMB 文件**：`list_sources` → `browse` → `play {source_id, path}`。
 
   `path` 必须使用 `browse` 返回的完整相对路径（例如 `Shows/Episode 01.mp4`），不能只传文件名。
+  默认情况下 `play` 会把同目录所有可播放媒体文件按文件名自然排序（`2 < 10 < 100`）加入队列：`control next/previous` 就是上一集/下一集，播完自动连播；`queue_folder: false` 可只播当前文件。
+
+- **播放整个文件夹**：`play {source_id, path: "Shows/Season 1"}`——path 传目录就按文件名排序整目录连播。
 
 - **继续观看**：`resume_history {title: "..."}`。
 
-  它会使用历史里保存的 `source_id`/`path`；不要自己拼 SMB 路径。
+  它会使用历史里保存的 `source_id`/`path`；不要自己拼 SMB 路径。续播同样会自动重建所在文件夹的队列，播完这一集自动播下一集。
 
 - **IPTV**：`save_iptv_source {name, url}` → `test_iptv_source` → `list_channels` → `play_channel {name|index}`。
 - **字幕**：`list_subtitles` → `set_subtitle {track_index|path|url}`，再用 `set_subtitle_style` 调整样式。
